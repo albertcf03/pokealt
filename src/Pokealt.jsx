@@ -26,7 +26,7 @@ import {
   Youtube, MessageCircle, Music2, Bell, CreditCard, Smartphone,
   Upload, CheckCircle2, AlertTriangle, ChevronRight, ChevronLeft, Pencil,
   RotateCcw, Phone, Mail, Clock, Info, Copy, Layers, Box, Tag, Eye, EyeOff,
-  ClipboardList, Users, SlidersHorizontal, Heart, User,
+  ClipboardList, Users, SlidersHorizontal, Heart, User, Camera, BellRing, KeyRound, RefreshCw, Send,
 } from "lucide-react";
 
 /* =================================================================
@@ -328,6 +328,74 @@ function copyText(text, onDone) {
     navigator.clipboard.writeText(text).then(() => onDone && onDone(true), () => onDone && onDone(false));
   } catch {
     onDone && onDone(false);
+  }
+}
+
+// Reduce la foto en el navegador antes de subirla (las del celular pesan varios MB).
+async function shrinkImage(file, maxSide = 1400) {
+  if (!file || !/^image\//.test(file.type)) throw new Error("Elige un archivo de imagen (JPG, PNG o WebP).");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("No se pudo leer la foto. Prueba con otra en JPG o PNG."));
+      i.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    const toBlob = (type, q) => new Promise((resolve) => canvas.toBlob(resolve, type, q));
+    let blob = await toBlob("image/webp", 0.85);
+    if (!blob || blob.type !== "image/webp") {
+      // Safari antiguo no genera WebP: JPEG con fondo blanco (JPEG no tiene transparencia).
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+      blob = await toBlob("image/jpeg", 0.85);
+    }
+    if (!blob) throw new Error("No se pudo procesar la foto.");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const blobToDataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("No se pudo leer la foto."));
+    r.readAsDataURL(blob);
+  });
+
+// Timbre corto (sin archivos de audio) para avisar al admin de un pedido nuevo.
+function playChime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [880, 1318].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t = ctx.currentTime + i * 0.16;
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch {
+    /* el navegador no permite sonido */
   }
 }
 
@@ -762,7 +830,7 @@ function FakeQR({ seed, color = "#2B2A26", badge, badgeColor }) {
 
 /* ---------- Header ---------- */
 
-function Header({ query, setQuery, category, setCategory, cartCount, onCart, onAdmin, adminMode, onClaims, favCount, onlyFavs, setOnlyFavs, settings, remote, isAdmin, profile, onAccount }) {
+function Header({ query, setQuery, category, setCategory, cartCount, onCart, onAdmin, adminMode, newOrders = 0, onClaims, favCount, onlyFavs, setOnlyFavs, settings, remote, isAdmin, profile, onAccount }) {
   const goCatalog = () => document.getElementById("catalogo")?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
     <header className="sticky top-0 z-40 bg-pika border-b-2 b-ink">
@@ -816,8 +884,13 @@ function Header({ query, setQuery, category, setCategory, cartCount, onCart, onA
             </button>
           )}
           {isAdmin && (
-            <button onClick={onAdmin} className={`pk-btn s-md !px-3 ${adminMode ? "v-dark" : "v-outline"}`} aria-label="Administración">
+            <button onClick={onAdmin} className={`pk-btn s-md !px-3 relative ${adminMode ? "v-dark" : "v-outline"}`} aria-label={newOrders ? `Administración, ${newOrders} pedidos nuevos` : "Administración"}>
               <Settings className="w-4 h-4" strokeWidth={2.5} /> <span className="hidden sm:inline">Admin</span>
+              {newOrders > 0 && (
+                <span key={newOrders} className="pk-bump absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-ember text-white text-xs flex items-center justify-center pk-mono border-2 b-ink">
+                  {newOrders}
+                </span>
+              )}
             </button>
           )}
           <button onClick={onCart} className="pk-btn v-dark s-md relative" aria-label={`Carrito, ${cartCount} unidades`}>
@@ -2392,12 +2465,34 @@ const emptyProduct = () => ({
   isFeatured: false, rarity: RARITIES[0], active: true, description: "",
 });
 
-function ProductForm({ initial, onSave, onCancel }) {
+const isImageUrl = (v) => /^(https?:|data:)/.test(v || "");
+
+function ProductForm({ initial, onSave, onCancel, onUpload }) {
   const [p, setP] = useState(initial);
   const [err, setErr] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+  const fallbackArt = useRef(isImageUrl(initial.image) ? "colorless" : initial.image || "colorless");
   const set = (k, num) => (e) => setP({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : num ? Number(e.target.value) : e.target.value });
+  const hasPhoto = isImageUrl(p.image);
+  const pickPhoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setErr("");
+    setUploading(true);
+    try {
+      const url = await onUpload(file);
+      setP((cur) => ({ ...cur, image: url }));
+    } catch (x) {
+      setErr(x.message || "No se pudo subir la foto.");
+    } finally {
+      setUploading(false);
+    }
+  };
   const submit = (e) => {
     e.preventDefault();
+    if (uploading) return setErr("Espera a que termine de subir la foto.");
     if (!p.name.trim() || !p.set.trim()) return setErr("Nombre y set/edición son obligatorios.");
     if (!(p.price > 0)) return setErr("El precio debe ser mayor a 0.");
     if (p.stock < 0) return setErr("El stock no puede ser negativo.");
@@ -2418,26 +2513,389 @@ function ProductForm({ initial, onSave, onCancel }) {
       </Field>
       <Field label="Precio (S/)"><input id="pf-price" type="number" min="0" step="0.5" className={`${inputCls()} pk-mono`} value={p.price} onChange={set("price", true)} /></Field>
       <Field label="Stock"><input id="pf-stock" type="number" min="0" className={`${inputCls()} pk-mono`} value={p.stock} onChange={set("stock", true)} /></Field>
-      <Field label="Imagen" hint="URL de imagen o tipo de arte: fire, water, grass, electric, psychic, dark, dragon, metal, fairy, colorless." className="sm:col-span-2">
-        <input id="pf-image" className={inputCls()} value={p.image} onChange={set("image")} />
-      </Field>
+      <div className="sm:col-span-2">
+        <span className="block pk-eyebrow c-ink2 mb-1.5">Foto del producto</span>
+        <div className="flex gap-3 items-start">
+          <div className="w-28 h-28 sm:w-32 sm:h-32 shrink-0 rounded-2xl overflow-hidden border-2 b-ink">
+            <ProductArt product={p} />
+          </div>
+          <div className="flex-1 min-w-0 space-y-2">
+            {onUpload && (
+              <>
+                <input ref={fileRef} id="pf-photo" type="file" accept="image/*" className="sr-only" onChange={pickPhoto} />
+                <div className="flex flex-wrap gap-2">
+                  <Btn type="button" variant="dark" onClick={() => fileRef.current && fileRef.current.click()} disabled={uploading}>
+                    {uploading ? (
+                      <><span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" /> Subiendo foto…</>
+                    ) : (
+                      <><Camera className="w-4 h-4" /> {hasPhoto ? "Cambiar foto" : "Tomar o elegir foto"}</>
+                    )}
+                  </Btn>
+                  {hasPhoto && !uploading && (
+                    <Btn type="button" variant="outline" onClick={() => setP({ ...p, image: fallbackArt.current })}>Quitar foto</Btn>
+                  )}
+                </div>
+                <p className="text-xs c-ink2">En el celular puedes tomarla con la cámara o elegirla de tu galería. Se achica sola antes de subirse.</p>
+              </>
+            )}
+            <Field label={onUpload ? "O pega un enlace de imagen o un tipo de dibujo" : "Imagen"} hint="Dibujos: fire, water, grass, electric, psychic, dark, dragon, metal, fairy, colorless.">
+              <input id="pf-image" className={inputCls()} value={/^data:/.test(p.image || "") ? "" : p.image} placeholder={hasPhoto ? "Foto subida desde tu equipo" : ""} onChange={set("image")} />
+            </Field>
+          </div>
+        </div>
+      </div>
       <Field label="Descripción" className="sm:col-span-2"><textarea id="pf-desc" rows={3} className={inputCls()} value={p.description} onChange={set("description")} /></Field>
       <label className="flex items-center gap-2 text-sm"><input id="pf-feat" type="checkbox" checked={p.isFeatured} onChange={set("isFeatured")} /> Destacado en portada</label>
       <label className="flex items-center gap-2 text-sm"><input id="pf-active" type="checkbox" checked={p.active} onChange={set("active")} /> Disponible para la venta</label>
       {err && <p className="sm:col-span-2 text-sm font-bold c-err">{err}</p>}
       <div className="sm:col-span-2 flex justify-end gap-2">
         <Btn variant="outline" type="button" onClick={onCancel}>Cancelar</Btn>
-        <Btn type="submit">Guardar producto</Btn>
+        <Btn type="submit" disabled={uploading}>Guardar producto</Btn>
       </div>
     </form>
   );
 }
 
-function AdminPanel({ open, onClose, products, updateProduct, saveProduct, deleteProduct, settings, setSettings, orders, setOrderStatus, claims, setClaimStatus, onReset, notify, remote }) {
-  const [tab, setTab] = useState("inventory");
+/* ---------- Avisos de pedidos nuevos (correo, WhatsApp y esta pantalla) ---------- */
+
+// Perú: si escriben 9 dígitos que empiezan con 9, se antepone el código de país 51.
+const waNumber = (v) => {
+  const d = onlyDigits(v);
+  return /^9\d{8}$/.test(d) ? `51${d}` : d;
+};
+
+// Traduce los errores más comunes de Resend y CallMeBot.
+function notifyErrorText(raw) {
+  let msg = String(raw || "");
+  try {
+    msg = JSON.parse(msg).message || msg;
+  } catch {
+    /* no era JSON */
+  }
+  if (/only send testing emails/i.test(msg)) return "Resend solo te deja enviarte correos al mismo correo con el que creaste tu cuenta. Usa ese correo arriba, o verifica tu dominio en Resend.";
+  if (/api key is invalid|invalid api key|missing api key/i.test(msg)) return "La clave de Resend no es válida. Crea una nueva y pégala otra vez.";
+  if (/domain is not verified|verify a domain/i.test(msg)) return "El remitente usa un dominio que aún no está verificado en Resend.";
+  if (/apikey/i.test(msg) && /invalid/i.test(msg)) return "La clave de CallMeBot no es válida. Revisa la que te llegó por WhatsApp.";
+  return msg.length > 180 ? `${msg.slice(0, 180)}…` : msg;
+}
+
+function sendResult(l) {
+  if (l.channel === "Error") return { text: "Error", detail: l.note, tone: "c-err" };
+  if (l.pending) return { text: "Enviando…", tone: "c-ink2" };
+  if (l.error) return { text: "No se envió", detail: notifyErrorText(l.error), tone: "c-err" };
+  if (l.status_code) return { text: "Enviado", tone: "c-ok" };
+  return { text: "Sin respuesta", tone: "c-ink2" };
+}
+
+function KeyBadge({ saved }) {
+  return saved ? (
+    <span className="pk-badge inline-flex items-center gap-1 rounded-full bg-okc text-white text-xs px-2 py-0.5 font-bold border-2 b-ink"><CheckCircle2 className="w-3.5 h-3.5" /> Clave guardada</span>
+  ) : (
+    <span className="pk-badge inline-flex items-center gap-1 rounded-full bg-paper c-ink2 text-xs px-2 py-0.5 font-bold border-2 b-line"><KeyRound className="w-3.5 h-3.5" /> Falta la clave</span>
+  );
+}
+
+function OrderAlertsCard({ backend, notify, orderSound, setOrderSound }) {
+  const [cfg, setCfg] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [keys, setKeys] = useState({ resend: "", callmebot: "" });
+  const [busy, setBusy] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [err, setErr] = useState("");
+  const [perm, setPerm] = useState(() => (typeof Notification === "undefined" ? "unsupported" : Notification.permission));
+  const timers = useRef([]);
+
+  const refresh = () =>
+    backend
+      .notifyStatus()
+      .then(setStatus)
+      .catch(() => {});
+
+  useEffect(() => {
+    if (!backend) return undefined;
+    let alive = true;
+    backend
+      .loadNotify()
+      .then((d) => {
+        if (!alive) return;
+        setCfg(d.settings);
+        setStatus(d.status);
+      })
+      .catch((e) => notify(e.message || "No se pudieron cargar los avisos.", "error"));
+    const list = timers.current;
+    return () => {
+      alive = false;
+      list.forEach(clearTimeout);
+    };
+  }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tras enviar, se consulta el resultado un par de veces (el envío sale en segundo plano).
+  const refreshSoon = () => {
+    timers.current.push(setTimeout(refresh, 2500), setTimeout(refresh, 8000));
+  };
+
+  const edit = (k) => (e) => {
+    setCfg({ ...cfg, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+    setDirty(true);
+    setErr("");
+  };
+
+  const save = async () => {
+    const next = { ...cfg, adminEmail: cfg.adminEmail.trim(), adminWhatsapp: waNumber(cfg.adminWhatsapp), emailFrom: cfg.emailFrom.trim() };
+    if (next.adminEmail && !emailValid(next.adminEmail)) {
+      setErr("Revisa tu correo.");
+      return false;
+    }
+    if (next.adminWhatsapp && !/^\d{9,15}$/.test(next.adminWhatsapp)) {
+      setErr("Revisa tu WhatsApp: solo números, con código de país (51 para Perú).");
+      return false;
+    }
+    if (!next.emailFrom) next.emailFrom = "PokeAlt <onboarding@resend.dev>";
+    setBusy("save");
+    try {
+      setCfg(await backend.saveNotifySettings(next));
+      setDirty(false);
+      return true;
+    } catch (e) {
+      setErr(e.message);
+      return false;
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveKey = async (kind, value) => {
+    setBusy(kind);
+    try {
+      await backend.setNotifySecret(kind, value);
+      setKeys((k) => ({ ...k, [kind]: "" }));
+      await refresh();
+      notify(value ? "Clave guardada." : "Clave eliminada.");
+    } catch (e) {
+      notify(e.message, "error");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const sendTest = async () => {
+    if (dirty && !(await save())) return;
+    setBusy("test");
+    try {
+      const n = await backend.sendTestNotification();
+      if (n > 0) {
+        notify(n === 1 ? "Aviso de prueba enviado." : `${n} avisos de prueba enviados.`);
+        await refresh();
+        refreshSoon();
+      } else {
+        setErr("No hay ningún canal listo: activa correo o WhatsApp, completa tus datos y guarda la clave.");
+      }
+    } catch (e) {
+      notify(e.message, "error");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const askPermission = async () => {
+    try {
+      setPerm(await Notification.requestPermission());
+    } catch {
+      setPerm("unsupported");
+    }
+  };
+
+  const header = (
+    <div>
+      <h3 className="pk-display font-bold text-lg flex items-center gap-2"><BellRing className="w-5 h-5" /> Avisos de pedidos nuevos</h3>
+      <p className="text-sm c-ink2 mt-1">Cada vez que alguien compra te llega un correo y/o un WhatsApp con el detalle del pedido.</p>
+    </div>
+  );
+
+  if (!backend) {
+    return (
+      <div className="pk-frame p-5 space-y-3 lg:col-span-2">
+        {header}
+        <p className="text-sm c-ink2">En modo demo los pedidos solo se guardan en este navegador. Los avisos por correo y WhatsApp funcionan en la tienda en línea.</p>
+      </div>
+    );
+  }
+  if (!cfg) {
+    return (
+      <div className="pk-frame p-5 space-y-3 lg:col-span-2">
+        {header}
+        <p className="text-sm c-ink2 flex items-center gap-2"><span className="w-4 h-4 rounded-full border-2 b-ink border-t-transparent animate-spin" /> Cargando…</p>
+      </div>
+    );
+  }
+
+  const keyRow = (kind, id, placeholder) => (
+    <div className="flex flex-col sm:flex-row gap-2">
+      <input
+        id={id}
+        type="password"
+        autoComplete="off"
+        placeholder={status && status[kind] ? "Pega una clave nueva para reemplazarla" : placeholder}
+        className={`${inputCls()} pk-mono flex-1 min-w-0`}
+        value={keys[kind]}
+        onChange={(e) => setKeys({ ...keys, [kind]: e.target.value })}
+      />
+      <Btn type="button" variant="dark" onClick={() => saveKey(kind, keys[kind])} disabled={!keys[kind].trim() || busy === kind}>
+        {busy === kind ? "Guardando…" : "Guardar clave"}
+      </Btn>
+    </div>
+  );
+
+  const log = (status && status.log) || [];
+
+  return (
+    <div className="pk-frame p-5 space-y-5 lg:col-span-2">
+      {header}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-2xl border-2 b-line p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="font-bold flex items-center gap-2"><Mail className="w-4 h-4" /> Correo (Resend)</div>
+            <KeyBadge saved={status && status.resend} />
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold"><input id="n-email-on" type="checkbox" checked={cfg.emailEnabled} onChange={edit("emailEnabled")} /> Enviarme un correo por cada pedido</label>
+          <Field label="Tu correo" hint="El mismo con el que creas tu cuenta de Resend.">
+            <input id="n-email" type="email" className={inputCls()} value={cfg.adminEmail} onChange={edit("adminEmail")} placeholder="tucorreo@gmail.com" />
+          </Field>
+          <div>
+            <span className="block pk-eyebrow c-ink2 mb-1.5">Clave de Resend (API key)</span>
+            {keyRow("resend", "n-resend", "re_…")}
+            {status && status.resend && (
+              <button type="button" onClick={() => saveKey("resend", "")} className="mt-1 text-xs font-bold c-ember hover:underline">Quitar clave</button>
+            )}
+          </div>
+          <ol className="text-xs c-ink2 list-decimal pl-4 space-y-0.5">
+            <li>Crea una cuenta gratis en resend.com con tu correo.</li>
+            <li>Entra a API Keys, crea una clave y pégala aquí.</li>
+          </ol>
+        </div>
+
+        <div className="rounded-2xl border-2 b-line p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="font-bold flex items-center gap-2"><MessageCircle className="w-4 h-4" /> WhatsApp (CallMeBot)</div>
+            <KeyBadge saved={status && status.callmebot} />
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold"><input id="n-wa-on" type="checkbox" checked={cfg.whatsappEnabled} onChange={edit("whatsappEnabled")} /> Enviarme un WhatsApp por cada pedido</label>
+          <Field label="Tu WhatsApp" hint="Con código de país, por ejemplo 51 958 961 176.">
+            <input id="n-wa" inputMode="tel" className={`${inputCls()} pk-mono`} value={cfg.adminWhatsapp} onChange={edit("adminWhatsapp")} placeholder="51958961176" />
+          </Field>
+          <div>
+            <span className="block pk-eyebrow c-ink2 mb-1.5">Clave de CallMeBot (apikey)</span>
+            {keyRow("callmebot", "n-cmb", "123456")}
+            {status && status.callmebot && (
+              <button type="button" onClick={() => saveKey("callmebot", "")} className="mt-1 text-xs font-bold c-ember hover:underline">Quitar clave</button>
+            )}
+          </div>
+          <ol className="text-xs c-ink2 list-decimal pl-4 space-y-0.5">
+            <li>Guarda en tus contactos el número de CallMeBot que figura en callmebot.com (hoy es +34 644 95 42 75).</li>
+            <li>Envíale por WhatsApp: <span className="pk-mono">I allow callmebot to send me messages</span></li>
+            <li>Te responde con tu apikey: pégala aquí.</li>
+          </ol>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border-2 b-line p-4 space-y-3">
+        <label className="flex items-center gap-2 text-sm font-semibold"><input id="n-cust" type="checkbox" checked={cfg.customerEmails} onChange={edit("customerEmails")} /> Enviar al cliente un correo confirmando su pedido</label>
+        <p className="text-xs c-ink2">Necesita un dominio propio verificado en Resend (por ejemplo pokealt.pe). Sin dominio, Resend solo te deja enviarte correos a ti.</p>
+        {cfg.customerEmails && (
+          <Field label="Remitente" hint="Debe usar tu dominio verificado.">
+            <input id="n-from" className={inputCls()} value={cfg.emailFrom} onChange={edit("emailFrom")} placeholder="PokeAlt <pedidos@pokealt.pe>" />
+          </Field>
+        )}
+      </div>
+
+      <div className="rounded-2xl border-2 b-line p-4 space-y-2">
+        <div className="font-bold flex items-center gap-2"><Bell className="w-4 h-4" /> Con la tienda abierta en este equipo</div>
+        <label className="flex items-center gap-2 text-sm"><input id="n-sound" type="checkbox" checked={orderSound} onChange={(e) => setOrderSound(e.target.checked)} /> Sonar un timbre cuando entra un pedido</label>
+        <div className="flex items-center gap-2 flex-wrap text-sm">
+          {perm === "granted" ? (
+            <span className="c-ok font-semibold flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Notificaciones del navegador activadas</span>
+          ) : perm === "denied" ? (
+            <span className="c-ink2">Bloqueaste las notificaciones de este navegador. Puedes activarlas desde el candado junto a la dirección.</span>
+          ) : perm === "unsupported" ? (
+            <span className="c-ink2">Este navegador no muestra notificaciones; igual verás el aviso en pantalla.</span>
+          ) : (
+            <Btn type="button" variant="outline" size="sm" onClick={askPermission}><Bell className="w-4 h-4" /> Activar notificaciones del navegador</Btn>
+          )}
+        </div>
+      </div>
+
+      {err && <p className="text-sm font-bold c-err">{err}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Btn type="button" onClick={save} disabled={!dirty || busy === "save"}>{busy === "save" ? "Guardando…" : dirty ? "Guardar avisos" : "Guardado"}</Btn>
+        <Btn type="button" variant="outline" onClick={sendTest} disabled={busy === "test"}><Send className="w-4 h-4" /> {busy === "test" ? "Enviando…" : "Enviar aviso de prueba"}</Btn>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="pk-eyebrow c-ink2">Últimos envíos</div>
+          <button type="button" onClick={refresh} className="text-xs font-bold c-ink2 hover:underline flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> Actualizar</button>
+        </div>
+        {log.length === 0 ? (
+          <p className="text-sm c-ink2 mt-2">Todavía no se envió ningún aviso.</p>
+        ) : (
+          <ul id="n-log" className="mt-2 divide-y divide-stone-200 text-sm">
+            {log.map((l) => {
+              const r = sendResult(l);
+              return (
+                <li key={l.id} className="py-2 flex gap-3 items-start">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold">{l.channel === "Error" ? "Aviso" : l.channel} · <span className="pk-mono">{l.order_id || "Prueba"}</span></div>
+                    {r.detail && <div className="text-xs c-ink2 break-words">{r.detail}</div>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`font-bold ${r.tone}`}>{r.text}</div>
+                    <div className="text-xs c-ink2">{relTime(l.created_at)}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ open, onClose, tab, setTab, products, updateProduct, saveProduct, deleteProduct, uploadImage, settings, setSettings, orders, setOrderStatus, newOrderIds = [], onSeenOrders, claims, setClaimStatus, onReset, notify, remote, backend, orderSound, setOrderSound }) {
   const [editing, setEditing] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [photoFor, setPhotoFor] = useState(null); // producto al que se le está cambiando la foto desde la tabla
+  const rowPhotoRef = useRef(null);
+  const rowTarget = useRef(null);
+
+  // Los pedidos marcados como "Nuevo" dejan de serlo al salir de la pestaña Pedidos.
+  useEffect(() => {
+    if (open && tab === "orders") return () => onSeenOrders && onSeenOrders();
+    return undefined;
+  }, [open, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!open) return null;
+
+  const pickRowPhoto = (product) => {
+    rowTarget.current = product;
+    rowPhotoRef.current && rowPhotoRef.current.click();
+  };
+  const onRowPhoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    const product = rowTarget.current;
+    e.target.value = "";
+    if (!file || !product) return;
+    setPhotoFor(product.id);
+    try {
+      const url = await uploadImage(file);
+      updateProduct(product.id, { image: url });
+      notify(`Foto actualizada: ${product.name}`);
+    } catch (x) {
+      notify(x.message || "No se pudo subir la foto.", "error");
+    } finally {
+      setPhotoFor(null);
+    }
+  };
 
   const update = updateProduct;
   const t = settings.lowStockThreshold;
@@ -2450,7 +2908,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
 
   const tabs = [
     ["inventory", "Inventario", Package],
-    ["orders", `Pedidos (${orders.length})`, ClipboardList],
+    ["orders", `Pedidos (${orders.length})${newOrderIds.length ? ` · ${newOrderIds.length} nuevo${newOrderIds.length > 1 ? "s" : ""}` : ""}`, ClipboardList],
     ["claims", `Reclamos (${claims.length})`, BookOpen],
     ["settings", "Configuración", Settings],
   ];
@@ -2497,6 +2955,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
                 <h3 className="pk-display font-bold text-lg mb-4">{editing.id ? `Editar: ${editing.name}` : "Nuevo producto"}</h3>
                 <ProductForm
                   initial={editing}
+                  onUpload={uploadImage}
                   onCancel={() => setEditing(null)}
                   onSave={async (p) => {
                     try {
@@ -2516,6 +2975,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
               </div>
             )}
 
+            <input ref={rowPhotoRef} id="row-photo" type="file" accept="image/*" className="sr-only" onChange={onRowPhoto} />
             <div className="pk-frame overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-paper text-xs uppercase tracking-wide c-ink2">
@@ -2533,7 +2993,19 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
                     <tr key={p.id} className="align-middle">
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2 min-w-56">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2 b-ink"><ProductArt product={p} /></div>
+                          <button
+                            type="button"
+                            onClick={() => pickRowPhoto(p)}
+                            disabled={photoFor === p.id}
+                            className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 border-2 b-ink group"
+                            aria-label={`Cambiar foto de ${p.name}`}
+                            title="Cambiar foto"
+                          >
+                            <ProductArt product={p} />
+                            <span className={`absolute inset-0 flex items-center justify-center text-white transition ${photoFor === p.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} style={{ background: "rgba(43,42,38,.6)" }}>
+                              {photoFor === p.id ? <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
+                            </span>
+                          </button>
                           <div className="min-w-0">
                             <div className="font-semibold c-ink truncate max-w-xs">{p.name}</div>
                             <div className="text-xs c-ink2">{p.category} · {p.condition}</div>
@@ -2578,6 +3050,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-1">
                           <button onClick={() => update(p.id, { isFeatured: !p.isFeatured })} className={`p-1.5 rounded hover:bg-paper ${p.isFeatured ? "text-yellow-500" : "c-ink2"}`} aria-label="Destacar"><Star className="w-4 h-4" /></button>
+                          <button onClick={() => pickRowPhoto(p)} disabled={photoFor === p.id} className="p-1.5 rounded hover:bg-paper c-ink2" aria-label="Cambiar foto"><Camera className="w-4 h-4" /></button>
                           <button onClick={() => setEditing(p)} className="p-1.5 rounded hover:bg-paper c-ink2" aria-label="Editar"><Pencil className="w-4 h-4" /></button>
                           <button onClick={async () => { try { await deleteProduct(p.id); notify(`Eliminado: ${p.name}`); } catch (e) { notify(e.message || "No se pudo eliminar.", "error"); } }} className="p-1.5 rounded hover:bg-pika50 c-ink2 hover:text-orange-600" aria-label="Eliminar"><Trash2 className="w-4 h-4" /></button>
                         </div>
@@ -2611,8 +3084,14 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
                 </thead>
                 <tbody className="divide-y divide-stone-200">
                   {orders.map((o) => (
-                    <tr key={o.id}>
-                      <td className="px-3 py-2"><div className="pk-mono font-bold">{o.id}</div><div className="text-xs c-ink2">{fmtDate(o.createdAt)}</div></td>
+                    <tr key={o.id} className={newOrderIds.includes(o.id) ? "bg-pika50" : ""}>
+                      <td className="px-3 py-2">
+                        <div className="pk-mono font-bold flex items-center gap-1.5">
+                          {o.id}
+                          {newOrderIds.includes(o.id) && <span className="pk-bump inline-block rounded-full bg-ember text-white text-xs px-2 py-0.5 font-bold">Nuevo</span>}
+                        </div>
+                        <div className="text-xs c-ink2">{fmtDate(o.createdAt)}</div>
+                      </td>
                       <td className="px-3 py-2"><div>{o.customer.name}</div><div className="text-xs c-ink2">{o.customer.docType} {o.customer.doc} · {o.customer.phone}</div></td>
                       <td className="px-3 py-2 text-xs">{o.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}</td>
                       <td className="px-3 py-2 text-xs">{o.method}</td>
@@ -2671,7 +3150,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
         )}
 
         {tab === "settings" && (
-          <div className="grid lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="pk-frame p-5 space-y-4">
               <h3 className="pk-display font-bold text-lg flex items-center gap-2"><Smartphone className="w-5 h-5" /> Billeteras digitales</h3>
               <Field label="Celular Yape"><input id="s-yape" className={`${inputCls()} pk-mono`} value={settings.yapeNumber} onChange={(e) => setSettings({ ...settings, yapeNumber: e.target.value })} /></Field>
@@ -2700,6 +3179,7 @@ function AdminPanel({ open, onClose, products, updateProduct, saveProduct, delet
                 )}
               </div>}
             </div>
+            <OrderAlertsCard backend={remote ? backend : null} notify={notify} orderSound={orderSound} setOrderSound={setOrderSound} />
           </div>
         )}
       </div>
@@ -2880,12 +3360,22 @@ function AccountModal({ open, onClose, backend, session, profile, onProfile, rec
 function Toasts({ items }) {
   return (
     <div className="fixed top-24 right-4 z-50 space-y-2 w-80 max-w-full pointer-events-none" aria-live="polite">
-      {items.map((t) => (
-        <div key={t.id} className={`pointer-events-auto pk-toast rounded-full soft px-4 py-2.5 text-sm font-bold flex gap-2 items-center border-2 b-ink ${t.type === "error" ? "bg-ember text-white" : "bg-ink text-white"}`}>
-          {t.type === "error" ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0 c-pika" />}
-          <span>{t.msg}</span>
-        </div>
-      ))}
+      {items.map((t) =>
+        t.type === "order" ? (
+          <div key={t.id} role="status" className="pointer-events-auto pk-toast rounded-3xl pop px-4 py-3 text-sm font-bold flex gap-3 items-center border-2 b-ink bg-pika c-ink">
+            <BellRing className="w-5 h-5 shrink-0 pk-urgent" />
+            <span className="flex-1">{t.msg}</span>
+            {t.action && (
+              <button type="button" onClick={t.action.onClick} className="pk-btn v-dark s-sm shrink-0">{t.action.label}</button>
+            )}
+          </div>
+        ) : (
+          <div key={t.id} className={`pointer-events-auto pk-toast rounded-full soft px-4 py-2.5 text-sm font-bold flex gap-2 items-center border-2 b-ink ${t.type === "error" ? "bg-ember text-white" : "bg-ink text-white"}`}>
+            {t.type === "error" ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0 c-pika" />}
+            <span>{t.msg}</span>
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -2934,11 +3424,20 @@ export default function PokealtStore({ backend = localBackend }) {
   const [cookieSettingsOpen, setCookieSettingsOpen] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [adminTab, setAdminTab] = useState("inventory");
+  const [newOrderIds, setNewOrderIds] = useState([]);
+  const newOrderIdsRef = useRef(newOrderIds);
+  newOrderIdsRef.current = newOrderIds;
+  const [orderSound, setOrderSound] = usePersistentState("orderSound", true);
+  const orderSoundRef = useRef(orderSound);
+  orderSoundRef.current = orderSound;
 
-  const notify = (msg, type = "ok") => {
+  const notify = (msg, type = "ok", opts = {}) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts((t) => [...t, { id, msg, type }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3600);
+    const dismiss = () => setToasts((t) => t.filter((x) => x.id !== id));
+    const action = opts.action && { label: opts.action.label, onClick: () => { dismiss(); opts.action.onClick(); } };
+    setToasts((t) => [...t, { id, msg, type, action }]);
+    setTimeout(dismiss, opts.ms || 3600);
   };
 
   const threshold = settings.lowStockThreshold;
@@ -2992,11 +3491,48 @@ export default function PokealtStore({ backend = localBackend }) {
     backend
       .loadAdminData()
       .then((d) => {
-        setOrders(d.orders);
+        // Conserva los pedidos que llegaron en vivo mientras se cargaba la lista.
+        const loaded = new Set(d.orders.map((o) => o.id));
+        setOrders((cur) => [...cur.filter((o) => newOrderIdsRef.current.includes(o.id) && !loaded.has(o.id)), ...d.orders]);
         setClaims(d.claims);
       })
       .catch((e) => notify(e.message, "error"));
   }, [adminOpen, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pedidos nuevos en vivo (solo admin): aviso en pantalla, timbre y notificación del navegador.
+  useEffect(() => {
+    if (!remote || !isAdmin || !backend.subscribeOrders) return undefined;
+    const openOrders = () => {
+      setAdminTab("orders");
+      setAdminOpen(true);
+    };
+    return backend.subscribeOrders((order) => {
+      setOrders((os) => (os.some((o) => o.id === order.id) ? os : [order, ...os]));
+      setNewOrderIds((ids) => (ids.includes(order.id) ? ids : [...ids, order.id]));
+      const who = String(order.customer?.name || "").trim().split(/\s+/)[0];
+      const text = `Nuevo pedido ${order.id} · ${fmtPEN(order.total)}${who ? ` · ${who}` : ""}`;
+      notify(text, "order", { ms: 10000, action: { label: "Ver", onClick: openOrders } });
+      if (orderSoundRef.current) playChime();
+      try {
+        if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          const n = new Notification(text, { body: order.items.map((i) => `${i.qty}× ${i.name}`).join(", ") || "Abre el panel para ver el detalle.", tag: order.id });
+          n.onclick = () => {
+            window.focus();
+            openOrders();
+            n.close();
+          };
+        }
+      } catch {
+        /* p. ej. Chrome en Android solo permite notificaciones desde un service worker */
+      }
+    });
+  }, [remote, isAdmin, backend]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // La pestaña del navegador muestra cuántos pedidos nuevos hay: "(2) PokeAlt…"
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, "");
+    document.title = newOrderIds.length ? `(${newOrderIds.length}) ${base}` : base;
+  }, [newOrderIds.length]);
 
   // Migración: quita la razón social de ejemplo guardada en navegadores de versiones anteriores.
   useEffect(() => {
@@ -3086,6 +3622,12 @@ export default function PokealtStore({ backend = localBackend }) {
         notify(e.message || "No se pudo guardar la configuración.", "error");
       }
     }, 600);
+  };
+
+  // Fotos de productos: en la tienda real se suben a Supabase Storage; en modo demo quedan en este navegador.
+  const uploadImage = async (file) => {
+    if (remote) return backend.uploadImage(await shrinkImage(file, 1400));
+    return blobToDataUrl(await shrinkImage(file, 700));
   };
 
   const placeOrder = async (order) => {
@@ -3180,8 +3722,9 @@ export default function PokealtStore({ backend = localBackend }) {
         setCategory={setCategory}
         cartCount={cartCount}
         onCart={() => setCartOpen(true)}
-        onAdmin={() => setAdminOpen(true)}
+        onAdmin={() => { if (newOrderIds.length) setAdminTab("orders"); setAdminOpen(true); }}
         adminMode={adminOpen}
+        newOrders={newOrderIds.length}
         onClaims={() => setClaimsOpen(true)}
         favCount={favs.length}
         onlyFavs={onlyFavs}
@@ -3273,19 +3816,27 @@ export default function PokealtStore({ backend = localBackend }) {
       <AdminPanel
         open={adminOpen && isAdmin}
         onClose={() => setAdminOpen(false)}
+        tab={adminTab}
+        setTab={setAdminTab}
         products={products}
         updateProduct={updateProduct}
         saveProduct={saveProduct}
         deleteProduct={deleteProduct}
+        uploadImage={uploadImage}
         settings={settings}
         setSettings={updateSettings}
         orders={orders}
         setOrderStatus={setOrderStatus}
+        newOrderIds={newOrderIds}
+        onSeenOrders={() => setNewOrderIds([])}
         claims={claims}
         setClaimStatus={setClaimStatus}
         onReset={remote ? null : resetDemo}
         notify={notify}
         remote={remote}
+        backend={backend}
+        orderSound={orderSound}
+        setOrderSound={setOrderSound}
       />
       <CookieSettings open={cookieSettingsOpen} onClose={() => setCookieSettingsOpen(false)} consent={cookies} setConsent={setCookies} />
       <CookieBanner consent={cookies} setConsent={setCookies} openSettings={() => setCookieSettingsOpen(true)} openPrivacy={() => setLegalDoc("privacy")} />

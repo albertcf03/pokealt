@@ -40,6 +40,17 @@ const PROFILE_FIELDS = {
   phone: "phone",
 };
 
+const NOTIFY_FIELDS = {
+  adminEmail: "admin_email",
+  adminWhatsapp: "admin_whatsapp",
+  emailEnabled: "email_enabled",
+  whatsappEnabled: "whatsapp_enabled",
+  customerEmails: "customer_emails",
+  emailFrom: "email_from",
+};
+
+const IMAGE_BUCKET = "product-images";
+
 const pick = (obj, fields) =>
   Object.fromEntries(Object.entries(obj || {}).filter(([k]) => k in fields).map(([k, v]) => [fields[k], v]));
 
@@ -90,6 +101,15 @@ export const toOrder = (r) => ({
   method: r.method,
   status: r.status,
   marketing: r.marketing,
+});
+
+export const toNotifySettings = (r) => ({
+  adminEmail: r.admin_email,
+  adminWhatsapp: r.admin_whatsapp,
+  emailEnabled: r.email_enabled,
+  whatsappEnabled: r.whatsapp_enabled,
+  customerEmails: r.customer_emails,
+  emailFrom: r.email_from,
 });
 
 export const toClaim = (r) => ({
@@ -188,6 +208,13 @@ export function createSupabaseBackend(url, key) {
     async saveSettings(s) {
       return toSettings(must(await sb.from("settings").update(pick(s, SETTINGS_FIELDS)).eq("id", 1).select().single()));
     },
+    // Sube una foto (ya reducida en el navegador) al bucket público y devuelve su URL.
+    async uploadImage(blob) {
+      const ext = blob.type === "image/webp" ? "webp" : blob.type === "image/png" ? "png" : "jpg";
+      const path = `products/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      must(await sb.storage.from(IMAGE_BUCKET).upload(path, blob, { contentType: blob.type, cacheControl: "31536000" }));
+      return sb.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+    },
 
     /* ---------- Pedidos ---------- */
     async placeOrder(order) {
@@ -224,6 +251,44 @@ export function createSupabaseBackend(url, key) {
         sb.from("claims").select("*").order("created_at", { ascending: false }).limit(200).then(must),
       ]);
       return { orders: orders.map(toOrder), claims: claims.map(toClaim) };
+    },
+
+    /* ---------- Avisos de pedidos (correo y WhatsApp) ---------- */
+    async loadNotify() {
+      const [row, status] = await Promise.all([
+        sb.from("notify_settings").select("*").eq("id", 1).maybeSingle().then(must),
+        sb.rpc("notify_status").then(must),
+      ]);
+      return { settings: row ? toNotifySettings(row) : null, status };
+    },
+    async saveNotifySettings(s) {
+      return toNotifySettings(must(await sb.from("notify_settings").update(pick(s, NOTIFY_FIELDS)).eq("id", 1).select().single()));
+    },
+    // Las claves se guardan cifradas en Vault; la web nunca las vuelve a leer.
+    async setNotifySecret(kind, value) {
+      must(await sb.rpc("set_notify_secret", { p_kind: kind, p_value: value }));
+    },
+    async notifyStatus() {
+      return must(await sb.rpc("notify_status"));
+    },
+    async sendTestNotification() {
+      return must(await sb.rpc("send_test_notification"));
+    },
+    // Pedidos nuevos en vivo (solo llegan los que el usuario puede ver: el admin, todos).
+    subscribeOrders(onOrder) {
+      const channel = sb
+        .channel("pokealt-orders")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, async (e) => {
+          let row = e.new;
+          try {
+            row = must(await sb.from("orders").select("*, order_items(*)").eq("id", e.new.id).single());
+          } catch {
+            /* sin detalle de productos: se muestra igual */
+          }
+          onOrder(toOrder(row));
+        })
+        .subscribe();
+      return () => sb.removeChannel(channel);
     },
 
     /* ---------- Subastas ---------- */

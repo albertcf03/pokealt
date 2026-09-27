@@ -16,9 +16,11 @@ Sin configurar nada, la web arranca en **modo demo** (los datos se guardan solo 
 | Cuentas | Registro con correo y contraseña, recuperación de contraseña y perfil con nombre, alias público, DNI/CE y celular. En el historial de pujas solo se ve el alias, parcialmente oculto. |
 | Panel admin | Solo lo ven las cuentas con rol `admin`. Edita productos, precios, stock, configuración, pedidos (cancelar devuelve el stock) y reclamos. |
 | Libro de Reclamaciones | `submit_claim()` asigna el número correlativo por año (`000001-2026`) y calcula el vencimiento a 15 días hábiles. |
+| Avisos de pedidos | Cada pedido nuevo te llega por correo (Resend) y/o WhatsApp (CallMeBot); opcionalmente el cliente recibe un correo de confirmación. Con la tienda abierta, el admin ve el aviso en pantalla con timbre. Se configura en **Admin → Configuración → Avisos**. |
+| Fotos de productos | En **Admin → Inventario** el botón de cámara sube una foto desde el celular o la computadora. Se achica en el navegador y se guarda en Supabase Storage (bucket `product-images`). |
 | Seguridad | Row Level Security en todas las tablas: un cliente solo ve sus pedidos, nadie puede darse rol de admin y los datos personales de los postores no son públicos. |
 
-Todavía **no** incluye: cobro real con tarjeta (en modo real la pestaña Tarjeta muestra "llega muy pronto"; Yape y Plin se verifican a mano), boletas/facturas electrónicas, página con varias subastas ni avisos por WhatsApp/correo. Son los siguientes pasos.
+Todavía **no** incluye: cobro real con tarjeta (en modo real la pestaña Tarjeta muestra "llega muy pronto"; Yape y Plin se verifican a mano), boletas/facturas electrónicas ni página con varias subastas. Son los siguientes pasos.
 
 ---
 
@@ -35,6 +37,7 @@ Todavía **no** incluye: cobro real con tarjeta (en modo real la pestaña Tarjet
 1. En el menú izquierdo abre **SQL Editor** → **New query**.
 2. Copia todo el contenido de `supabase/schema.sql`, pégalo y presiona **Run**. Debe decir *Success*.
 3. Abre otra **New query**, pega `supabase/seed.sql` y presiona **Run**. Esto carga los 14 productos, la configuración y la primera subasta (cierra un domingo a las 20:00, hora de Lima).
+4. Repite con `supabase/notifications.sql` (avisos de pedidos) y `supabase/storage.sql` (fotos de productos).
 
 ### 3. Copiar las llaves
 En **Project Settings → API Keys** copia la **Project URL** y la **Publishable key** (empieza con `sb_publishable_`) y ponlas en `src/config.js`.
@@ -61,7 +64,16 @@ Así los correos de confirmación y de "olvidé mi contraseña" llevan a tu web.
    ```
 3. Vuelve a entrar a la web: verás el botón **Admin**.
 
-### 7. Antes de abrir al público
+### 7. Activar los avisos de pedidos
+En **Admin → Configuración → Avisos de pedidos nuevos**:
+- **Correo**: crea una cuenta gratis en [resend.com](https://resend.com) con tu correo, entra a **API Keys**, crea una clave y pégala. Escribe ese mismo correo en "Tu correo". Sin dominio propio, Resend solo envía al correo de tu cuenta.
+- **WhatsApp**: guarda en tus contactos el número de CallMeBot que figura en [callmebot.com](https://www.callmebot.com/blog/free-api-whatsapp-messages/), envíale `I allow callmebot to send me messages` y pega la apikey que te responde. Escribe tu número con 51 adelante.
+- Presiona **Guardar avisos** y luego **Enviar aviso de prueba**. Abajo aparece si cada envío salió bien.
+- **Correo al cliente**: activa la opción cuando verifiques tu dominio en Resend (por ejemplo `pokealt.pe`) y usa un remitente de ese dominio.
+
+Las claves quedan cifradas en Supabase Vault; la web nunca las vuelve a mostrar.
+
+### 8. Antes de abrir al público
 - **Correos**: el servicio de correo incluido en Supabase solo envía unos pocos correos por hora. Configura un SMTP propio en **Authentication → Emails → SMTP Settings** (por ejemplo con [Resend](https://resend.com), que tiene plan gratis) para que todos los clientes reciban su confirmación.
 - **Datos reales**: en el panel **Admin → Configuración** pon tus números de Yape y Plin.
 - **Dominio**: en Vercel → **Settings → Domains** puedes conectar `pokealt.pe`.
@@ -81,6 +93,8 @@ npm run build          # genera dist/
 - `src/backend/supabase.js`: capa de datos (consultas, funciones RPC, tiempo real y cuentas).
 - `supabase/schema.sql`: tablas, funciones y reglas de seguridad. Se puede ejecutar de nuevo sin perder datos.
 - `supabase/seed.sql`: datos iniciales. No duplica si se vuelve a ejecutar.
+- `supabase/notifications.sql`: avisos de pedidos con `pg_net` y claves en Vault. Solo corre en Supabase; `place_order()` lo llama si existe y el pedido se guarda aunque el aviso falle.
+- `supabase/storage.sql`: bucket público `product-images`; solo el admin sube, cambia o borra.
 
 ### Gestionar subastas
 Mientras se construye la página de subastas, se crean desde **Table Editor → auctions → Insert row** (título, grado, precio base, incremento y fecha de cierre `ends_at`) o con SQL:

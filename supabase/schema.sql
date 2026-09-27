@@ -213,6 +213,13 @@ begin
   select v_order.id, l ->> 'id', l ->> 'name', (l ->> 'price')::numeric, (l ->> 'qty')::integer
     from jsonb_array_elements(v_lines) l;
 
+  -- Avisos al admin y al cliente (supabase/notifications.sql). Si no están instalados o fallan, el pedido igual se guarda.
+  begin
+    perform public.notify_new_order(v_order.id);
+  exception when others then
+    null;
+  end;
+
   return v_order;
 end;
 $$;
