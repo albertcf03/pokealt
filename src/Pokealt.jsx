@@ -473,10 +473,22 @@ function ProductArt({ product, size = "md", plain = false }) {
   const Icon = art.Icon;
   const holo = ["Special Illustration Rare", "Hyper Rare"].includes(product.rarity);
   const big = size === "lg";
-  let inner;
+  // Foto real: ocupa todo el recuadro sin recortarse (se ve completa la caja o la carta).
   if (isUrl) {
-    inner = <img src={product.image} alt={product.name} className={`${big ? "w-56" : "w-28"} rounded-xl border-2 b-ink soft`} />;
-  } else if (product.category === "Singles") {
+    return (
+      <div className={`w-full h-full ${plain ? "bg-pika" : "halftone"} relative flex items-center justify-center overflow-hidden`}>
+        <img
+          src={product.image}
+          alt={product.name}
+          loading="lazy"
+          className={`w-full h-full object-contain ${big ? "p-[5%]" : "p-[7%]"}`}
+          style={{ filter: "drop-shadow(0 6px 10px rgba(43,42,38,.28))" }}
+        />
+      </div>
+    );
+  }
+  let inner;
+  if (product.category === "Singles") {
     inner = (
       <div className={`${big ? "w-44 h-60" : "w-24 h-32"} rounded-xl bg-pika border-2 b-ink p-1.5 soft rotate-3 ${holo ? "pk-holo" : ""}`}>
         <div className={`w-full h-full rounded-lg bg-gradient-to-br ${art.bg} flex flex-col border b-ink`}>
