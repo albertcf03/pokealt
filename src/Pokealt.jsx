@@ -410,7 +410,68 @@ const FontStyles = () => (
     .pk-in{animation:pkPop .2s cubic-bezier(.34,1.56,.64,1)}
     @keyframes pkPulse{0%,100%{opacity:1}50%{opacity:.35}}
     .pk-live-dot{width:7px;height:7px;border-radius:999px;background:#fff;animation:pkPulse 1.2s infinite}
-    @media (prefers-reduced-motion: reduce){.pk-holo::after{animation:none;display:none}.pk-in,.pk-live-dot{animation:none}.pk-card:hover{transform:none}}
+
+    /* ---------- Animaciones ---------- */
+    @keyframes pkRise{from{opacity:0;translate:0 24px}to{opacity:1;translate:0 0}}
+    @keyframes pkSlideIn{from{opacity:0;translate:48px 0;rotate:3deg}to{opacity:1;translate:0 0;rotate:0deg}}
+    @keyframes pkFade{from{opacity:0}to{opacity:1}}
+    @keyframes pkSheet{from{opacity:0;transform:translateY(48px) scale(.96)}to{opacity:1;transform:none}}
+    @keyframes pkDrawer{from{transform:translateX(100%)}to{transform:none}}
+    @keyframes pkToast{from{opacity:0;transform:translateX(56px) scale(.9)}to{opacity:1;transform:none}}
+    @keyframes pkBump{0%{transform:scale(1)}30%{transform:scale(1.4) rotate(-10deg)}60%{transform:scale(.9)}100%{transform:scale(1)}}
+    @keyframes pkHeart{0%{transform:scale(1)}25%{transform:scale(1.45)}55%{transform:scale(.85)}100%{transform:scale(1)}}
+    @keyframes pkWiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}40%{transform:rotate(10deg)}60%{transform:rotate(-6deg)}80%{transform:rotate(4deg)}}
+    @keyframes pkFloat{0%,100%{translate:0 0}50%{translate:0 -7px}}
+    @keyframes pkDrift{from{background-position:0 0,0 0}to{background-position:28px 28px,0 0}}
+    @keyframes pkFlash{0%{background:var(--pika);transform:scale(1.1)}100%{background:transparent;transform:none}}
+    @keyframes pkBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+    @keyframes pkTick{from{transform:translateY(-40%);opacity:.15}to{transform:none;opacity:1}}
+    @keyframes pkGlow{0%,100%{box-shadow:0 6px 0 var(--ink)}50%{box-shadow:0 6px 0 var(--ink),0 0 0 6px rgba(238,78,30,.25)}}
+
+    .pk-rise{animation:pkRise .7s cubic-bezier(.22,1,.36,1) both}
+    .pk-d1{animation-delay:.08s}.pk-d2{animation-delay:.16s}.pk-d3{animation-delay:.24s}.pk-d4{animation-delay:.32s}.pk-d5{animation-delay:.4s}
+    .pk-slide-in{animation:pkSlideIn .8s cubic-bezier(.22,1,.36,1) .2s both}
+    .pk-backdrop{animation:pkFade .2s ease-out both}
+    .pk-sheet{animation:pkSheet .34s cubic-bezier(.34,1.3,.64,1) both}
+    .pk-drawer{animation:pkDrawer .34s cubic-bezier(.22,1,.36,1) both}
+    .pk-toast{animation:pkToast .4s cubic-bezier(.34,1.56,.64,1) both}
+    .pk-bump{animation:pkBump .55s cubic-bezier(.34,1.56,.64,1)}
+    .pk-heart-on svg{animation:pkHeart .45s cubic-bezier(.34,1.56,.64,1)}
+    .pk-float{animation:pkFloat 4s ease-in-out infinite}
+    .pk-drift{animation:pkDrift 14s linear infinite}
+    @media (max-width: 640px){.pk-drift{animation:none}}
+    .pk-flash{animation:pkFlash .9s ease-out;border-radius:10px}
+    .pk-urgent{animation:pkBeat 1s ease-in-out infinite}
+    .pk-tick{animation:pkTick .3s ease-out}
+    .pk-glow{animation:pkGlow 2.4s ease-in-out infinite}
+    .pk-cookie{animation:pkSheet .45s cubic-bezier(.34,1.3,.64,1) .8s both}
+
+    /* Aparecen al hacer scroll (navegadores con scroll-driven animations); si no, al cargar. */
+    .pk-reveal{animation:pkRise .6s cubic-bezier(.22,1,.36,1) both}
+    @supports (animation-timeline: view()){
+      .pk-reveal{animation:pkRise linear both;animation-timeline:view();animation-range:entry 0% entry 40%}
+    }
+
+    /* Hover */
+    .pk-btn:not(.v-ghost):hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 0 var(--ink)}
+    .pk-btn:not(.v-ghost):active:not(:disabled){transform:translateY(1px);box-shadow:0 2px 0 var(--ink)}
+    .pk-art{transition:transform .45s cubic-bezier(.22,1,.36,1)}
+    .pk-card:hover div.pk-art,.pk-hover-art:hover div.pk-art{transform:scale(1.08) rotate(-3deg)}
+    .pk-card:hover img.pk-art,.pk-hover-art:hover img.pk-art{transform:scale(1.07)}
+    .pk-logo:hover img{animation:pkWiggle .6s ease-in-out}
+    .pk-icon-pop{transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+    .pk-trust:hover .pk-icon-pop,.pk-card:hover .pk-icon-pop{transform:rotate(-12deg) scale(1.12)}
+    .pk-card:hover .pk-arrow{transform:translateX(4px)}
+    .pk-arrow{transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+    .pk-tab{transition:background .15s,color .15s,transform .15s}
+    .pk-tab:active{transform:scale(.94)}
+
+    @media (prefers-reduced-motion: reduce){
+      .pk-root *,.pk-root *::before,.pk-root *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.01ms!important}
+      .pk-reveal{animation:none!important}
+      .pk-holo::after{display:none}
+      .pk-card:hover,.pk-btn:hover{transform:none!important}
+    }
   `}</style>
 );
 
@@ -481,7 +542,7 @@ function ProductArt({ product, size = "md", plain = false }) {
           src={product.image}
           alt={product.name}
           loading="lazy"
-          className={`w-full h-full object-contain ${big ? "p-[5%]" : "p-[7%]"}`}
+          className={`pk-art w-full h-full object-contain ${big ? "p-[5%]" : "p-[7%]"}`}
           style={{ filter: "drop-shadow(0 6px 10px rgba(43,42,38,.28))" }}
         />
       </div>
@@ -523,7 +584,7 @@ function ProductArt({ product, size = "md", plain = false }) {
   }
   return (
     <div className={`w-full h-full ${plain ? "bg-pika" : "halftone"} relative flex items-center justify-center overflow-hidden`}>
-      <div className="relative">{inner}</div>
+      <div className="relative pk-art">{inner}</div>
     </div>
   );
 }
@@ -551,8 +612,8 @@ function Modal({ open, onClose, title, subtitle, children, size = "max-w-2xl", i
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`pk-in relative w-full ${size} max-h-full overflow-y-auto bg-white border-2 b-ink pop-lg rounded-t-3xl sm:rounded-3xl`}>
+      <div className="pk-backdrop absolute inset-0 bg-stone-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={`pk-sheet relative w-full ${size} max-h-full overflow-y-auto bg-white border-2 b-ink pop-lg rounded-t-3xl sm:rounded-3xl`}>
         <div className="sticky top-0 z-10 halftone border-b-2 b-ink px-5 py-4 flex items-start gap-3">
           {Icon && (
             <div className="mt-0.5 w-10 h-10 rounded-full bg-ink c-pika flex items-center justify-center shrink-0 border-2 b-ink">
@@ -716,7 +777,7 @@ function Header({ query, setQuery, category, setCategory, cartCount, onCart, onA
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
-        <a href="#top" aria-label="PokeAlt inicio"><Logo /></a>
+        <a href="#top" aria-label="PokeAlt inicio" className="pk-logo"><Logo /></a>
         <div className="hidden lg:flex items-center gap-1 ml-2">
           <a href="#catalogo" className="pk-tab on">Tienda</a>
           <a href="#subasta" className="pk-tab c-ink">Subastas</a>
@@ -747,7 +808,7 @@ function Header({ query, setQuery, category, setCategory, cartCount, onCart, onA
             aria-pressed={onlyFavs}
           >
             <Heart className="w-4 h-4" strokeWidth={2.5} fill={onlyFavs ? "currentColor" : "none"} />
-            {favCount > 0 && <span className="pk-mono text-xs">{favCount}</span>}
+            {favCount > 0 && <span key={favCount} className="pk-mono text-xs pk-bump inline-block">{favCount}</span>}
           </button>
           {remote && (
             <button onClick={onAccount} className="pk-btn v-outline s-md !px-3" aria-label="Mi cuenta">
@@ -762,7 +823,7 @@ function Header({ query, setQuery, category, setCategory, cartCount, onCart, onA
           <button onClick={onCart} className="pk-btn v-dark s-md relative" aria-label={`Carrito, ${cartCount} unidades`}>
             <ShoppingCart className="w-4 h-4" strokeWidth={2.5} /> <span className="hidden sm:inline">Carrito</span>
             {cartCount > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-ember text-white text-xs flex items-center justify-center pk-mono border-2 b-ink">
+              <span key={cartCount} className="pk-bump absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-ember text-white text-xs flex items-center justify-center pk-mono border-2 b-ink">
                 {cartCount}
               </span>
             )}
@@ -812,6 +873,13 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
   useEffect(() => setAmount((a) => (a < minBid ? minBid : a)), [minBid]);
   const ended = t.ms === 0;
   const urgent = !ended && t.ms < 3600 * 1000;
+  // Destello del precio cuando llega una puja nueva (no al cargar).
+  const prevTop = useRef(top);
+  const [flash, setFlash] = useState(0);
+  useEffect(() => {
+    if (prevTop.current !== top) setFlash((f) => f + 1);
+    prevTop.current = top;
+  }, [top]);
   const myAlias = remote ? profile?.alias : alias.trim();
   const profileReady = !remote || (profile && profile.alias && profile.docNumber && profile.fullName);
 
@@ -848,17 +916,17 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
     }
   };
 
-  const unit = (v, l) => (
-    <div className={`text-center rounded-xl border-2 b-ink py-1.5 ${urgent ? "bg-ember text-white" : "bg-white c-ink"}`}>
-      <div className="pk-mono text-xl font-bold leading-none">{String(v).padStart(2, "0")}</div>
+  const unit = (v, l, tick = false) => (
+    <div className={`text-center rounded-xl border-2 b-ink py-1.5 overflow-hidden ${urgent ? "bg-ember text-white" : "bg-white c-ink"}`}>
+      <div key={tick ? v : undefined} className={`pk-mono text-xl font-bold leading-none ${tick && !ended ? "pk-tick" : ""}`}>{String(v).padStart(2, "0")}</div>
       <div className={`text-xs font-extrabold uppercase mt-0.5 ${urgent ? "text-white/80" : "c-ink2"}`}>{l}</div>
     </div>
   );
 
   return (
-    <div className="pk-frame overflow-hidden !rounded-3xl pop-lg">
+    <div className={`pk-frame overflow-hidden !rounded-3xl pop-lg ${urgent ? "pk-glow" : ""}`}>
       <div className="halftone border-b-2 b-ink p-4 flex gap-4 items-center">
-        <div className="w-24 h-32 shrink-0">
+        <div className="w-24 h-32 shrink-0 pk-float">
           <ProductArt product={{ image: auction.image || "fire", category: "Singles", rarity: "Hyper Rare", name: auction.title }} plain />
         </div>
         <div className="min-w-0 space-y-2">
@@ -876,7 +944,7 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
         <div className="flex items-end justify-between gap-2">
           <div>
             <div className="pk-eyebrow c-ink2">{bidCount ? "Puja actual" : "Precio base"}</div>
-            <div className="pk-mono text-3xl font-bold c-ink leading-tight">{fmtPEN(top)}</div>
+            <div key={flash} className={`pk-mono text-3xl font-bold c-ink leading-tight inline-block ${flash ? "pk-flash" : ""}`}>{fmtPEN(top)}</div>
           </div>
           <div className="text-right text-xs font-bold c-ink2">
             <Gavel className="w-4 h-4 inline -mt-0.5" /> {bidCount} {bidCount === 1 ? "puja" : "pujas"}
@@ -884,8 +952,8 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
         </div>
         <div>
           <div className="pk-eyebrow c-ink2 mb-1.5 flex items-center gap-1"><Timer className="w-3.5 h-3.5" /> Termina en</div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {unit(t.d, "días")}{unit(t.h, "hrs")}{unit(t.m, "min")}{unit(t.s, "seg")}
+          <div className={`grid grid-cols-4 gap-1.5 ${urgent ? "pk-urgent" : ""}`}>
+            {unit(t.d, "días")}{unit(t.h, "hrs")}{unit(t.m, "min")}{unit(t.s, "seg", true)}
           </div>
         </div>
 
@@ -924,7 +992,7 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
 
         <ul className="divide-y b-line border-t-2 b-line pt-1">
           {auction.bids.slice(0, 3).map((b, i) => (
-            <li key={i} className="flex items-center justify-between py-1.5 text-sm">
+            <li key={`${b.alias}-${b.amount}`} className="pk-rise flex items-center justify-between py-1.5 text-sm">
               <span className="flex items-center gap-2 font-bold c-ink">
                 {maskAlias(b.alias)}
                 {i === 0 && <span className="pk-badge bg-pika c-ink border-2 b-ink !py-0">Líder</span>}
@@ -943,19 +1011,19 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
 function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remote, profile, onNeedAccount, loading }) {
   const star = featured[0];
   return (
-    <section id="top" className="halftone border-b-2 b-ink">
+    <section id="top" className="halftone pk-drift border-b-2 b-ink overflow-hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 md:py-14 grid lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-7">
-          <span className="pk-badge bg-white c-ink border-2 b-ink pop-sm !text-xs !py-1">
+          <span className="pk-rise pk-badge bg-white c-ink border-2 b-ink pop-sm !text-xs !py-1">
             <BadgeCheck className="w-4 h-4 c-ok" /> 100% original · importación oficial
           </span>
-          <h1 className="pk-display pk-balance mt-5 text-4xl sm:text-5xl lg:text-6xl c-ink leading-none" style={{ letterSpacing: "-0.03em", fontWeight: 900 }}>
+          <h1 className="pk-rise pk-d1 pk-display pk-balance mt-5 text-4xl sm:text-5xl lg:text-6xl c-ink leading-none" style={{ letterSpacing: "-0.03em", fontWeight: 900 }}>
             Tu próxima carta favorita está a una puja.
           </h1>
-          <p className="mt-5 c-ink text-lg max-w-xl font-semibold" style={{ opacity: 0.85 }}>
+          <p className="pk-rise pk-d2 mt-5 c-ink text-lg max-w-xl font-semibold" style={{ opacity: 0.85 }}>
             Sellado, singles y preventas de Pokémon TCG revisados uno por uno. Paga con Yape, Plin o tarjeta y recibe en todo el Perú con Olva Courier y Shalom.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="pk-rise pk-d3 mt-7 flex flex-wrap gap-3">
             <Btn variant="dark" size="lg" onClick={() => document.getElementById("catalogo")?.scrollIntoView({ behavior: "smooth" })}>
               Ir a la tienda <ChevronRight className="w-5 h-5" strokeWidth={2.5} />
             </Btn>
@@ -964,7 +1032,7 @@ function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remo
             </Btn>
           </div>
           {star && (
-            <div className="mt-8 pk-frame p-3 flex items-center gap-4 max-w-lg">
+            <div className="pk-rise pk-d4 pk-hover-art mt-8 pk-frame p-3 flex items-center gap-4 max-w-lg">
               <button onClick={() => onView(star)} className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border-2 b-ink">
                 <ProductArt product={star} />
               </button>
@@ -982,7 +1050,7 @@ function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remo
             </div>
           )}
         </div>
-        <div id="subasta" className="lg:col-span-5 scroll-mt-40">
+        <div id="subasta" className="pk-slide-in lg:col-span-5 scroll-mt-40">
           {auction ? (
             <AuctionCard auction={auction} onBid={onBid} notify={notify} remote={remote} profile={profile} onNeedAccount={onNeedAccount} />
           ) : loading ? (
@@ -1014,8 +1082,8 @@ function TrustStrip() {
     <section className="bg-white border-b-2 b-ink">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4">
         {items.map(({ Icon, t, d }) => (
-          <div key={t} className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-pika border-2 b-ink pop-sm c-ink flex items-center justify-center shrink-0">
+          <div key={t} className="pk-reveal pk-trust flex items-center gap-3">
+            <div className="pk-icon-pop w-11 h-11 rounded-full bg-pika border-2 b-ink pop-sm c-ink flex items-center justify-center shrink-0">
               <Icon className="w-5 h-5" strokeWidth={2.2} />
             </div>
             <div className="min-w-0">
@@ -1035,8 +1103,19 @@ function ProductCard({ product, threshold, inCart, onAdd, onView, isFav, toggleF
   const s = stockStatus(product, threshold);
   const remaining = product.stock - inCart;
   const canAdd = s.key !== "out" && remaining > 0;
+  // Confirmación breve en el botón al agregar.
+  const [added, setAdded] = useState(false);
+  const addedTimer = useRef(null);
+  useEffect(() => () => clearTimeout(addedTimer.current), []);
+  const add = () => {
+    if (!canAdd) return;
+    onAdd(product);
+    setAdded(true);
+    clearTimeout(addedTimer.current);
+    addedTimer.current = setTimeout(() => setAdded(false), 1100);
+  };
   return (
-    <article className="pk-card flex flex-col overflow-hidden">
+    <article className="pk-card pk-reveal flex flex-col overflow-hidden">
       <div className="relative aspect-square w-full border-b-2 b-line">
         <button onClick={() => onView(product)} className="w-full h-full focus:outline-none" aria-label={`Ver ${product.name}`}>
           <ProductArt product={product} />
@@ -1047,7 +1126,7 @@ function ProductCard({ product, threshold, inCart, onAdd, onView, isFav, toggleF
         </div>
         <button
           onClick={() => toggleFav(product.id)}
-          className={`absolute top-2.5 right-2.5 w-9 h-9 rounded-full border-2 b-ink pop-sm flex items-center justify-center ${isFav ? "bg-ember text-white" : "bg-white c-ink"}`}
+          className={`absolute top-2.5 right-2.5 w-9 h-9 rounded-full border-2 b-ink pop-sm flex items-center justify-center transition-colors ${isFav ? "bg-ember text-white pk-heart-on" : "bg-white c-ink"}`}
           aria-label={isFav ? "Quitar de favoritos" : "Agregar a favoritos"}
           aria-pressed={isFav}
         >
@@ -1070,9 +1149,15 @@ function ProductCard({ product, threshold, inCart, onAdd, onView, isFav, toggleF
           <div className="pk-mono text-xl font-bold c-ink">{fmtPEN(product.price)}</div>
           <StockTag product={product} threshold={threshold} />
         </div>
-        <Btn size="sm" onClick={() => onAdd(product)} disabled={!canAdd} className="w-full">
-          <ShoppingCart className="w-4 h-4" strokeWidth={2.5} />
-          {s.key === "out" ? "Sin stock" : remaining <= 0 ? "Máximo en carrito" : "Agregar al carrito"}
+        <Btn size="sm" onClick={add} disabled={!canAdd && !added} variant={added ? "dark" : "primary"} className="w-full">
+          {added ? (
+            <span key="ok" className="pk-bump inline-flex items-center gap-2"><CheckCircle2 className="w-4 h-4" strokeWidth={2.5} /> ¡Agregado!</span>
+          ) : (
+            <>
+              <ShoppingCart className="w-4 h-4" strokeWidth={2.5} />
+              {s.key === "out" ? "Sin stock" : remaining <= 0 ? "Máximo en carrito" : "Agregar al carrito"}
+            </>
+          )}
         </Btn>
       </div>
     </article>
@@ -1303,7 +1388,7 @@ function Community({ notify, onSubscribe }) {
           <p className="c-ink2 mt-3 font-semibold">
             Únete a los canales para enterarte primero de preventas, reposiciones y las subastas de los viernes.
           </p>
-          <form onSubmit={submit} className="mt-5 pk-frame p-4">
+          <form onSubmit={submit} className="pk-reveal mt-5 pk-frame p-4">
             <div className="flex items-center gap-2 pk-display c-ink"><Bell className="w-5 h-5 c-ember" strokeWidth={2.5} /> Alertas de stock por WhatsApp</div>
             {subscribed ? (
               <p className="mt-2 text-sm font-bold c-ok flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Estás suscrito a las alertas.</p>
@@ -1322,8 +1407,8 @@ function Community({ notify, onSubscribe }) {
         </div>
         <div className="lg:col-span-2 grid sm:grid-cols-2 gap-3 content-start">
           {channels.map(({ Icon, name, handle, meta, color, href }) => (
-            <a key={name} href={href} target="_blank" rel="noreferrer" className="pk-card group flex items-center gap-4 p-4">
-              <div className="w-12 h-12 rounded-full text-white flex items-center justify-center shrink-0 border-2 b-ink pop-sm" style={{ background: color }}>
+            <a key={name} href={href} target="_blank" rel="noreferrer" className="pk-card pk-reveal group flex items-center gap-4 p-4">
+              <div className="pk-icon-pop w-12 h-12 rounded-full text-white flex items-center justify-center shrink-0 border-2 b-ink pop-sm" style={{ background: color }}>
                 <Icon className="w-6 h-6" strokeWidth={2} />
               </div>
               <div className="min-w-0 flex-1">
@@ -1331,7 +1416,7 @@ function Community({ notify, onSubscribe }) {
                 <div className="text-sm font-bold c-ember truncate">{handle}</div>
                 <div className="text-xs c-ink2 truncate">{meta}</div>
               </div>
-              <ChevronRight className="w-5 h-5 c-ink" strokeWidth={2.5} />
+              <ChevronRight className="pk-arrow w-5 h-5 c-ink" strokeWidth={2.5} />
             </a>
           ))}
         </div>
@@ -1420,8 +1505,8 @@ function CartDrawer({ open, onClose, cart, products, setQty, remove, subtotal, o
   const missing = Math.max(0, freeFrom - subtotal);
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Carrito">
-      <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm" onClick={onClose} />
-      <aside className="pk-in absolute right-0 top-0 h-full w-full max-w-md bg-paper border-l-2 b-ink flex flex-col">
+      <div className="pk-backdrop absolute inset-0 bg-stone-900/60 backdrop-blur-sm" onClick={onClose} />
+      <aside className="pk-drawer absolute right-0 top-0 h-full w-full max-w-md bg-paper border-l-2 b-ink flex flex-col">
         <div className="px-5 py-4 halftone border-b-2 b-ink flex items-center justify-between">
           <h2 className="pk-display text-xl c-ink flex items-center gap-2"><ShoppingCart className="w-5 h-5" strokeWidth={2.5} /> Tu carrito</h2>
           <button onClick={onClose} className="pk-btn v-outline s-sm !px-2 w-9" aria-label="Cerrar carrito"><X className="w-4 h-4" strokeWidth={2.5} /></button>
@@ -2247,7 +2332,7 @@ function CookieBanner({ consent, setConsent, openSettings, openPrivacy }) {
   if (consent.decided) return null;
   return (
     <div className="fixed bottom-0 inset-x-0 z-40 p-3 sm:p-4">
-      <div className="pk-in max-w-4xl mx-auto rounded-3xl bg-white border-2 b-ink pop-lg p-4 flex flex-col md:flex-row md:items-center gap-4">
+      <div className="pk-cookie max-w-4xl mx-auto rounded-3xl bg-white border-2 b-ink pop-lg p-4 flex flex-col md:flex-row md:items-center gap-4">
         <div className="flex gap-3 flex-1">
           <div className="w-11 h-11 rounded-full bg-pika border-2 b-ink flex items-center justify-center shrink-0"><Cookie className="w-6 h-6 c-ink" strokeWidth={2.2} /></div>
           <p className="text-sm c-ink">
@@ -2796,7 +2881,7 @@ function Toasts({ items }) {
   return (
     <div className="fixed top-24 right-4 z-50 space-y-2 w-80 max-w-full pointer-events-none" aria-live="polite">
       {items.map((t) => (
-        <div key={t.id} className={`pointer-events-auto pk-in rounded-full soft px-4 py-2.5 text-sm font-bold flex gap-2 items-center border-2 b-ink ${t.type === "error" ? "bg-ember text-white" : "bg-ink text-white"}`}>
+        <div key={t.id} className={`pointer-events-auto pk-toast rounded-full soft px-4 py-2.5 text-sm font-bold flex gap-2 items-center border-2 b-ink ${t.type === "error" ? "bg-ember text-white" : "bg-ink text-white"}`}>
           {t.type === "error" ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0 c-pika" />}
           <span>{t.msg}</span>
         </div>
