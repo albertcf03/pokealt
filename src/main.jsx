@@ -6,8 +6,11 @@ import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "./config.js";
 import "./index.css";
 
 // Las variables de entorno (Vercel o .env) mandan; si no están, se usa el proyecto de src/config.js.
-const url = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_PUBLISHABLE_KEY;
+// Se ignoran los valores de ejemplo de .env.example por si quedaron copiados tal cual.
+const real = (v) => (v && !/TU-PROYECTO|xxxx/.test(v) ? v : "");
+const url = real(import.meta.env.VITE_SUPABASE_URL) || SUPABASE_URL;
+const key =
+  real(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) || real(import.meta.env.VITE_SUPABASE_ANON_KEY) || SUPABASE_PUBLISHABLE_KEY;
 
 // Sin URL ni llave la tienda arranca en modo demo (datos en el navegador).
 const backend = url && key ? createSupabaseBackend(url, key) : undefined;
