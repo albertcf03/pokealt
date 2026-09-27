@@ -928,7 +928,7 @@ function AuctionCard({ auction, onBid, notify, remote, profile, onNeedAccount })
   );
 }
 
-function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remote, profile, onNeedAccount }) {
+function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remote, profile, onNeedAccount, loading }) {
   const star = featured[0];
   return (
     <section id="top" className="halftone border-b-2 b-ink">
@@ -973,6 +973,11 @@ function Hero({ featured, onView, onAdd, auction, onBid, notify, threshold, remo
         <div id="subasta" className="lg:col-span-5 scroll-mt-40">
           {auction ? (
             <AuctionCard auction={auction} onBid={onBid} notify={notify} remote={remote} profile={profile} onNeedAccount={onNeedAccount} />
+          ) : loading ? (
+            <div className="pk-frame p-6 text-center">
+              <span className="inline-block w-8 h-8 rounded-full border-4 b-ink border-t-transparent animate-spin" />
+              <p className="pk-display c-ink mt-2">Cargando subasta…</p>
+            </div>
           ) : (
             <div className="pk-frame p-6 text-center">
               <Gavel className="w-8 h-8 mx-auto c-ink" />
@@ -3103,6 +3108,7 @@ export default function PokealtStore({ backend = localBackend }) {
           remote={remote}
           profile={profile}
           onNeedAccount={() => setAccountOpen(true)}
+          loading={loading}
         />
         <TrustStrip />
         <Catalog
